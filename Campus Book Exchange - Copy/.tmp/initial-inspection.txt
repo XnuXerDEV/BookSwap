@@ -1,0 +1,383 @@
+import React from "react"
+import type { Metadata } from "next"
+import Script from "next/script"
+import { BodyCustomCode, renderHeadCustomCode } from "@/lib/make-custom-code"
+import {
+  makeSiteSettings,
+  sanitizeHtmlAttribute,
+} from "@/lib/make-site-settings"
+import "./styles.css"
+
+const defaultTitle = "figma-make-app"
+const title = makeSiteSettings.title ?? defaultTitle
+const description =
+  makeSiteSettings.description ??
+  "Built with Next.js, Payload CMS, and Tailwind CSS"
+const favicon = makeSiteSettings.icons?.icon ?? "/favicon.svg"
+const socialImage = makeSiteSettings.openGraph?.image
+const googleAnalyticsId = sanitizeHtmlAttribute(
+  makeSiteSettings.analytics?.googleAnalyticsId,
+)
+
+export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+  ),
+  title,
+  description,
+  robots:
+    makeSiteSettings.robots?.index === false
+      ? { follow: false, index: false }
+      : undefined,
+  icons: favicon ? { icon: favicon } : undefined,
+  openGraph: {
+    title,
+    description,
+    images: socialImage ? [socialImage] : undefined,
+  },
+  twitter: socialImage
+    ? {
+        card: "summary_large_image",
+        images: [socialImage],
+      }
+    : undefined,
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const language = sanitizeHtmlAttribute(makeSiteSettings.language) || "en"
+  const addBypassLinks = makeSiteSettings.accessibility?.addBypassLinks === true
+  const customScripts = makeSiteSettings.customScripts
+
+  return (
+    <html lang={language}>
+      <head>
+        {renderHeadCustomCode(customScripts?.headStart, "head-start")}
+        {renderHeadCustomCode(customScripts?.headEnd, "head-end")}
+      </head>
+      <body className="min-h-screen bg-white text-zinc-950 antialiased">
+        <BodyCustomCode html={customScripts?.bodyStart} />
+        {addBypassLinks && (
+          <a className="figma-bypass-link" href="#root">
+            Skip to content
+          </a>
+        )}
+        <div id="root" tabIndex={-1}>
+          {children}
+        </div>
+        {googleAnalyticsId && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${googleAnalyticsId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="figma-google-analytics" strategy="afterInteractive">
+              {`
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', ${JSON.stringify(googleAnalyticsId)});
+`}
+            </Script>
+          </>
+        )}
+        <BodyCustomCode html={customScripts?.bodyEnd} />
+      </body>
+    </html>
+  )
+}
+// This starter uses client state for its pointer effect. When replacing it,
+// remove 'use client' unless the new page needs browser APIs, event handlers,
+// or React client hooks.
+'use client'
+
+import { useState, type CSSProperties, type PointerEvent } from 'react'
+
+export default function HomePage() {
+  const [hovering, setHovering] = useState(false)
+  const [cursor, setCursor] = useState({ x: 0, y: 0 })
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    setCursor({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+  }
+
+  // The hover layer is the same dot grid scaled up, revealed only within a soft
+  // circle that follows the cursor — so dots appear to bloom under the pointer.
+  const mask = `radial-gradient(circle at ${cursor.x}px ${cursor.y}px, #000 72px, transparent 120px)`
+
+  const container: CSSProperties = {
+    position: 'relative',
+    width: '100%',
+    minHeight: '100vh',
+    overflow: 'hidden',
+    backgroundColor: '#f8fbff',
+  }
+  const dots: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage:
+      'radial-gradient(circle at center, rgba(157, 200, 255, 0.52) 1.2px, transparent 1.4px)',
+    backgroundPosition: 'center',
+    backgroundSize: '18px 18px',
+  }
+  const dotsHover: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage:
+      'radial-gradient(circle at center, rgba(157, 200, 255, 0.52) 2.16px, transparent 2.36px)',
+    backgroundPosition: 'center',
+    backgroundSize: '18px 18px',
+    opacity: hovering ? 1 : 0,
+    maskImage: mask,
+    WebkitMaskImage: mask,
+  }
+
+  return (
+    <main
+      style={container}
+      onPointerEnter={() => setHovering(true)}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={() => setHovering(false)}
+    >
+      <div style={dots} />
+      <div style={dotsHover} />
+    </main>
+  )
+}
+import type { CollectionConfig } from 'payload'
+
+import { createFolderField, createTagField } from 'payload'
+
+export const Media: CollectionConfig = {
+  slug: 'media',
+  access: {
+    read: () => true,
+  },
+  fields: [
+    {
+      name: 'alt',
+      type: 'text',
+      required: true,
+    },
+    createFolderField({ relationTo: 'folders' }),
+    createTagField({ relationTo: 'tags' }),
+  ],
+  upload: true,
+}
+import type { Access, CollectionConfig } from 'payload'
+
+const isPayloadAdmin: Access = ({ req }) => req.user?.collection === 'admins'
+
+export const Admins: CollectionConfig = {
+  slug: 'admins',
+  access: {
+    create: () => false,
+    delete: isPayloadAdmin,
+    read: isPayloadAdmin,
+    update: isPayloadAdmin,
+  },
+  admin: {
+    useAsTitle: 'email',
+  },
+  auth: true,
+  fields: [
+    // Email added by default
+    // Add more fields as needed
+  ],
+  versions: false,
+}
+import { withPayload } from '@payloadcms/next/withPayload'
+import type { NextConfig } from 'next'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const dirname = path.dirname(__filename)
+
+const makePublicPreviewOrigin = (() => {
+  const publicURL = process.env.FIGMA_PUBLIC_URL
+  if (!publicURL) return undefined
+
+  try {
+    // Next.js expects host[:port] entries rather than full URL origins.
+    return new URL(publicURL).host
+  } catch {
+    return undefined
+  }
+})()
+
+const nextConfig: NextConfig = {
+  webpack: (webpackConfig) => {
+    webpackConfig.resolve.extensionAlias = {
+      '.cjs': ['.cts', '.cjs'],
+      '.js': ['.ts', '.tsx', '.js', '.jsx'],
+      '.mjs': ['.mts', '.mjs'],
+    }
+
+    return webpackConfig
+  },
+  turbopack: {
+    root: path.resolve(dirname),
+  },
+  output: 'standalone',
+  images: {
+    loader: 'custom',
+    loaderFile: './figma-image-loader.ts',
+  },
+  // Don't block publishing or preview deploys on errors if the emitted JS is valid
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  // `next dev` serves the Make preview at a per-sandbox cross-origin host. Next
+  // blocks its dev resources (`/_next/*`, HMR WebSocket, internal endpoints)
+  // unless the origin is listed here, and a blocked HMR socket stalls Turbopack
+  // so the Payload `/admin` panel renders blank in the preview iframe.
+  // Dev-only - ignored by `next build`.
+  //
+  allowedDevOrigins: makePublicPreviewOrigin ? [makePublicPreviewOrigin] : [],
+  // Prerender source maps add ~100 MB per static build worker
+  enablePrerenderSourceMaps: false,
+  experimental: {
+    // Caps static build workers (~250-380 MB each) to lower `next build` peak memory
+    cpus: 2,
+    // Payload Admin uses Next Server Actions. In the Make preview proxy, the
+    // browser origin is the public sandbox host while `x-forwarded-host` points
+    // at the local dev server. Allow only that exact platform-provisioned host.
+    serverActions: {
+      allowedOrigins: makePublicPreviewOrigin ? [makePublicPreviewOrigin] : [],
+    },
+  },
+  env: {
+    NEXT_PUBLIC_SITE_URL: process.env.FIGMA_PUBLIC_URL || 'http://localhost:3000',
+    // NOTE: Do not add FIGMA_OAUTH_CLIENT_SECRET, FIGMA_CONTENT_API_ACCESS_KEY,
+    // or any other credential here. Values placed in `env` are inlined into
+    // the JavaScript bundle by Next.js at build time and become readable by
+    // anyone who can load the app's client assets. Server-side code
+    // (payload.config.ts, route handlers, server components) can still read
+    // these values from `process.env.*` without declaring them here. Only
+    // public, non-secret values that explicitly need to be available in
+    // browser code should be added - and those should use the `NEXT_PUBLIC_*`
+    // naming convention.
+    FIGMA_CONTENT_API_CONTENT_SYSTEM_ID: process.env.FIGMA_CONTENT_API_CONTENT_SYSTEM_ID,
+    FIGMA_CONTENT_API_URL: process.env.FIGMA_CONTENT_API_URL,
+    FIGMA_OAUTH_CLIENT_ID: process.env.FIGMA_OAUTH_CLIENT_ID,
+  },
+}
+
+export default withPayload(nextConfig, { devBundleServerPackages: false })
+import { getPayload } from "payload"
+import config from "@payload-config"
+import type { Config } from "@/payload-types"
+
+type CollectionSlug = keyof Config["collections"]
+
+/**
+ * Get the Payload instance configured for this project.
+ * Use this in server components and route handlers.
+ */
+export async function getPayloadClient() {
+  const payloadConfig = await config
+  return getPayload({ config: payloadConfig })
+}
+
+/**
+ * Find a single document by slug in any collection.
+ * Returns the document if found, or null if not found.
+ *
+ * Use this shared helper instead of duplicating slug lookup logic
+ * in each route file. Call `notFound()` from `next/navigation`
+ * when this returns null.
+ *
+ * @example
+ * ```tsx
+ * import { findBySlug } from '@/lib/payload'
+ * import { notFound } from 'next/navigation'
+ *
+ * export default async function ArticlePage({ params }) {
+ *   const { slug } = await params
+ *   const article = await findBySlug('articles', slug)
+ *   if (!article) notFound()
+ *   return <Article data={article} />
+ * }
+ * ```
+ */
+export async function findBySlug<T extends CollectionSlug>(
+  collection: T,
+  slug: string,
+  options?: {
+    /** Include draft documents (default: false, only published) */
+    draft?: boolean
+    /** Relationship population depth (default: 2) */
+    depth?: number
+  },
+): Promise<Config["collections"][T] | null> {
+  const payload = await getPayloadClient()
+  const { draft = false, depth = 2 } = options ?? {}
+
+  const result = await payload.find({
+    collection,
+    overrideAccess: false,
+    where: {
+      slug: { equals: slug },
+    },
+    depth,
+    limit: 1,
+    draft,
+  })
+
+  return result.docs[0] as Config["collections"][T] ?? null
+}
+
+/**
+ * Find a single document by a custom field value.
+ * Returns the document if found, or null if not found.
+ *
+ * Useful for collections that use a field other than `slug` for routing,
+ * such as `title`, `handle`, or `sku`.
+ *
+ * @example
+ * ```tsx
+ * import { findByField } from '@/lib/payload'
+ * import { notFound } from 'next/navigation'
+ *
+ * export default async function ProductPage({ params }) {
+ *   const { sku } = await params
+ *   const product = await findByField('products', 'sku', sku)
+ *   if (!product) notFound()
+ *   return <Product data={product} />
+ * }
+ * ```
+ */
+export async function findByField<T extends CollectionSlug>(
+  collection: T,
+  field: string,
+  value: string,
+  options?: {
+    /** Include draft documents (default: false, only published) */
+    draft?: boolean
+    /** Relationship population depth (default: 2) */
+    depth?: number
+  },
+): Promise<Config["collections"][T] | null> {
+  const payload = await getPayloadClient()
+  const { draft = false, depth = 2 } = options ?? {}
+
+  const result = await payload.find({
+    collection,
+    overrideAccess: false,
+    where: {
+      [field]: { equals: value },
+    },
+    depth,
+    limit: 1,
+    draft,
+  })
+
+  return result.docs[0] as Config["collections"][T] ?? null
+}
+{"state":"success","steps":[{"name":"preflight","status":"ok"},{"name":"mise","status":"ok","duration_ms":250},{"name":"setup","status":"skipped"},{"name":"install","status":"ok","duration_ms":17934},{"name":"dev","status":"ok","duration_ms":9581}]}
+{"command":"help","result":{"commands":[{"name":"build","description":"Prepare Payload and run the detected framework build.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"frameworkArgs":{"default":[],"description":"Arguments forwarded to the detected framework build.","type":"array","items":{"type":"string"}},"types":{"default":true,"description":"Generate Payload types before building.","type":"boolean"}},"additionalProperties":false}},{"name":"countDocuments","description":"Count documents in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"trash":{"description":"Read from or include the trash.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema0"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema0"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema0"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"countGlobalVersions","description":"Count versions of a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema0"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema0"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema0"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"countVersions","description":"Count document versions in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema0"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema0"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema0"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"createDocuments","description":"Create one or more documents in a local collection.","examples":["payload createDocuments --slug posts --documents '[{\"data\":{\"title\":\"First post\"}}]'","payload createDocuments --input @create-posts.json"],"inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"documents":{"minItems":1,"type":"array","items":{"type":"object","properties":{"data":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{},"description":"The document fields."},"file":{"anyOf":[{"type":"string","minLength":1,"description":"Local upload file path."},{"type":"object","properties":{"name":{"description":"File name override.","type":"string","minLength":1},"source":{"type":"string","const":"externalURL"},"url":{"type":"string","format":"uri","description":"The http or https URL to download."}},"required":["source","url"],"additionalProperties":false}]}},"required":["data"],"additionalProperties":false},"description":"A JSON array of {\"data\": {...}, \"file\"?: ...} objects."},"draft":{"default":false,"description":"Write draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"publishAllLocales":{"description":"Publish all locales.","type":"boolean"},"returning":{"default":false,"description":"Return complete documents instead of only their IDs.","type":"boolean"},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"overwriteExistingFiles":{"default":false,"description":"Overwrite existing files.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug","documents"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"deleteDocuments","description":"Delete documents from a local collection by ID or where query.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"trash":{"description":"Read from or include the trash.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema0"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema0"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema0"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"duplicateDocument","description":"Duplicate a document in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"data":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{},"description":"The document fields."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"default":false,"description":"Write draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"selectedLocales":{"description":"Localized field locales to include.","type":"array","items":{"type":"string"}},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["id","slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"findDistinct","description":"Find distinct field values in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"field":{"type":"string","minLength":1,"description":"Field path."},"limit":{"description":"Maximum number of results.","type":"integer","minimum":1,"maximum":100},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"page":{"description":"Result page.","type":"integer","minimum":1,"maximum":9007199254740991},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"sort":{"description":"Fields to sort by. Prefix a field with - for descending order.","anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"trash":{"description":"Read from or include the trash.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema2"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug","field"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}},"__schema2":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema2"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema2"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"findDocuments","description":"Find documents in a local collection, or find one document by ID.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"description":"Include or read draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"joins":{"description":"Optional: configure join field queries, or pass false to disable all joins.","anyOf":[{"type":"boolean","const":false},{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"type":"object","properties":{"count":{"type":"boolean"},"limit":{"type":"number"},"page":{"type":"number"},"sort":{"type":"string"},"where":{"$ref":"#/$defs/__schema0"}},"additionalProperties":false}]}}]},"limit":{"default":10,"description":"Maximum number of results.","type":"integer","minimum":1,"maximum":100},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"page":{"default":1,"description":"Result page.","type":"integer","minimum":1,"maximum":9007199254740991},"pagination":{"default":true,"description":"Enable pagination.","type":"boolean"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema1"},{"$ref":"#/$defs/__schema2"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema1"},{"$ref":"#/$defs/__schema2"}],"type":"object"},"sort":{"description":"Fields to sort by. Prefix a field with - for descending order.","anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"trash":{"description":"Read from or include the trash.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema0"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema0"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema0"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema1"}]}},"__schema2":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema2"}]}}}}},{"name":"findGlobal","description":"Find a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"findGlobalVersionByID","description":"Find one version of a local global by ID.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["id","slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"findGlobalVersions","description":"Find versions of a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"limit":{"default":10,"description":"Maximum number of results.","type":"integer","minimum":1,"maximum":100},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"page":{"default":1,"description":"Result page.","type":"integer","minimum":1,"maximum":9007199254740991},"pagination":{"default":true,"description":"Enable pagination.","type":"boolean"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"sort":{"description":"Fields to sort by. Prefix a field with - for descending order.","anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema2"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}},"__schema2":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema2"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema2"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"findVersionByID","description":"Find one document version in a local collection by ID.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"description":"Include or read draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"trash":{"description":"Read from or include the trash.","type":"boolean"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["id","slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"findVersions","description":"Find document versions in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"description":"Include or read draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"limit":{"default":10,"description":"Maximum number of results.","type":"integer","minimum":1,"maximum":100},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"page":{"default":1,"description":"Result page.","type":"integer","minimum":1,"maximum":9007199254740991},"pagination":{"default":true,"description":"Enable pagination.","type":"boolean"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"sort":{"description":"Fields to sort by. Prefix a field with - for descending order.","anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"trash":{"description":"Read from or include the trash.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema2"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}},"__schema2":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema2"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema2"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"generate:db-schema","description":"Generate the database adapter schema.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"log":{"default":true,"description":"Log the generated schema.","type":"boolean"},"prettify":{"default":true,"description":"Prettify the generated schema.","type":"boolean"}},"additionalProperties":false}},{"name":"generate:importmap","description":"Generate the admin import map.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"generate:types","description":"Generate TypeScript types from the Payload config.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"getCollectionSchema","description":"Print the writable JSON schema and LLM instructions for a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."}},"required":["slug"],"additionalProperties":false}},{"name":"getConfigInfo","description":"Print local collection and global slugs.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"getGlobalSchema","description":"Print the writable JSON schema and LLM instructions for a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."}},"required":["slug"],"additionalProperties":false}},{"name":"help","description":"Display help for Payload commands.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"command":{"description":"Command to describe.","type":"string"}},"additionalProperties":false}},{"name":"info","description":"Print environment and dependency information.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"jobs:handle-schedules","description":"Queue due scheduled jobs.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"allQueues":{"description":"Handle schedules for all queues.","type":"boolean"},"queue":{"description":"Only handle schedules for this queue.","type":"string"}},"additionalProperties":false}},{"name":"jobs:run","description":"Run queued jobs.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"allQueues":{"description":"Run jobs from all queues.","type":"boolean"},"handleSchedules":{"description":"Queue due scheduled jobs before running.","type":"boolean"},"limit":{"description":"Maximum number of jobs to run.","type":"integer","exclusiveMinimum":0,"maximum":9007199254740991},"queue":{"description":"Only run jobs from this queue.","type":"string"}},"additionalProperties":false}},{"name":"migrate","description":"Run pending migrations.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"forceAcceptWarning":{"description":"Skip the migration warning.","type":"boolean"}},"additionalProperties":false}},{"name":"migrate:create","description":"Create a migration.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"file":{"description":"Create from a predefined migration module.","type":"string"},"forceAcceptWarning":{"description":"Skip the migration warning.","type":"boolean"},"migrationName":{"description":"Name of the migration.","type":"string"},"skipEmpty":{"description":"Do not create an empty migration.","type":"boolean"}},"additionalProperties":false}},{"name":"migrate:down","description":"Roll back the latest migration batch.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"migrate:fresh","description":"Run all migrations from a clean database.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"forceAcceptWarning":{"description":"Skip the destructive migration warning.","type":"boolean"}},"additionalProperties":false}},{"name":"migrate:refresh","description":"Roll back and re-run the latest migration batch.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"migrate:reset","description":"Roll back all migrations.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"migrate:status","description":"Show migration status.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{},"additionalProperties":false}},{"name":"restoreGlobalVersion","description":"Restore one version of a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["id","slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"restoreVersion","description":"Restore one document version in a local collection.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"default":false,"description":"Write draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["id","slug"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}},{"name":"run","description":"Run a local script in the Payload environment.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"scriptArgs":{"default":[],"description":"Arguments passed to the script.","type":"array","items":{"type":"string"}},"scriptPath":{"type":"string","minLength":1,"description":"Path to the local script."}},"required":["scriptPath"],"additionalProperties":false}},{"name":"updateDocument","description":"Update documents in a local collection by ID or where query.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"anyOf":[{"type":"string","minLength":1},{"type":"number"}],"description":"Document or version ID."},"slug":{"type":"string","minLength":1,"description":"The target slug."},"data":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{},"description":"The document fields."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"default":false,"description":"Write draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"file":{"anyOf":[{"type":"string","minLength":1,"description":"Local upload file path."},{"type":"object","properties":{"name":{"description":"File name override.","type":"string","minLength":1},"source":{"type":"string","const":"externalURL"},"url":{"type":"string","format":"uri","description":"The http or https URL to download."}},"required":["source","url"],"additionalProperties":false}]},"limit":{"description":"Maximum number of results.","type":"integer","minimum":1,"maximum":100},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"overrideLock":{"default":true,"description":"Override document locks.","type":"boolean"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"publishAllLocales":{"description":"Publish all locales.","type":"boolean"},"returning":{"default":false,"description":"Return complete documents instead of only their IDs.","type":"boolean"},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"sort":{"description":"Fields to sort by. Prefix a field with - for descending order.","anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"trash":{"description":"Read from or include the trash.","type":"boolean"},"unpublishAllLocales":{"description":"Unpublish all locales.","type":"boolean"},"where":{"description":"Where query using Payload field operators and and/or groups.","$ref":"#/$defs/__schema2"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"overwriteExistingFiles":{"default":false,"description":"Overwrite existing files.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug","data"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}},"__schema2":{"type":"object","properties":{"and":{"type":"array","items":{"$ref":"#/$defs/__schema2"}},"or":{"type":"array","items":{"$ref":"#/$defs/__schema2"}}},"additionalProperties":{"type":"object","propertyNames":{"type":"string","enum":["equals","contains","not_equals","in","all","not_in","exists","greater_than","greater_than_equal","less_than","less_than_equal","like","not_like","within","intersects","near"]},"additionalProperties":{}}}}}},{"name":"updateGlobal","description":"Update a local global.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"slug":{"type":"string","minLength":1,"description":"The target slug."},"data":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{},"description":"The document fields."},"depth":{"default":0,"description":"How many levels deep to populate relationships.","type":"integer","minimum":0,"maximum":10},"draft":{"default":false,"description":"Write draft content.","type":"boolean"},"fallbackLocale":{"description":"Optional fallback locale code, or false to disable fallback.","anyOf":[{"type":"string"},{"type":"boolean","const":false}]},"locale":{"description":"Optional locale code for localized fields.","type":"string"},"overrideLock":{"default":true,"description":"Override document locks.","type":"boolean"},"populate":{"description":"Optional: control which fields to include from populated relationship or upload documents.","type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"}},"publishAllLocales":{"description":"Publish all locales.","type":"boolean"},"select":{"description":"Optional: define exactly which fields you'd like to return in the response, for example {\"title\": true}.","anyOf":[{"$ref":"#/$defs/__schema0"},{"$ref":"#/$defs/__schema1"}],"type":"object"},"unpublishAllLocales":{"description":"Unpublish all locales.","type":"boolean"},"overrideAccess":{"default":true,"description":"Bypass access control.","type":"boolean"},"showHiddenFields":{"description":"Include hidden fields.","type":"boolean"}},"required":["slug","data"],"additionalProperties":false,"$defs":{"__schema0":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":true},{"$ref":"#/$defs/__schema0"}]}},"__schema1":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{"anyOf":[{"type":"boolean","const":false},{"$ref":"#/$defs/__schema1"}]}}}}}],"globalOptions":[{"description":"Run the command on a cron schedule.","flags":"--cron <expression>"},{"description":"Use human-readable output even when PAYLOAD_CLI_JSON is set.","flags":"--no-json"}]},"success":true}
